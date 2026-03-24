@@ -35,7 +35,8 @@ DIFF_FILTER = "ACM"        # Added / Copied / Modified
 CR_DIFF_DIR = "cr/diff"          # 執行緒儲存 .diff 的目錄
 CR_ANALYSIS_DIR = "cr/analysis"  # AI 代理寫入 JSON 結果的目錄
 CR_REPORT_DIR = "cr/report"      # 彙整報告輸出目錄
-CR_CASES_DIR = "cases"           # 歷史問題案例庫目錄
+# 讓 cases 目錄直接綁定在這隻 Python 程式的「上一層/cases」
+CR_CASES_DIR = str((_SCRIPTS_DIR.parent / "cases").resolve())
 
 # 僅掃描程式碼相關副檔名（可透過 --extensions 覆蓋）
 CODE_EXTENSIONS: frozenset[str] = frozenset({

@@ -132,6 +132,7 @@ def match_and_escalate(
     """
     cases = load_cases(cases_dir)
     if not cases:
+        print("[INFO] 無歷史案例庫，跳過案例對比")
         return results  # 無案例庫，直接回傳原始結果
 
     total_matched = 0
@@ -198,7 +199,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="案例對比模組（測試：列出所有案例）")
-    parser.add_argument("--cases-dir", default="cases", help="案例庫目錄（預設：cases/）")
+    default_cases_dir = str((Path(__file__).parent.parent / "cases").resolve())
+    parser.add_argument("--cases-dir", default=default_cases_dir, help=f"案例庫目錄（預設：{default_cases_dir}）")
     args = parser.parse_args()
 
     loaded = load_cases(args.cases_dir)
