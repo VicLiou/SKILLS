@@ -1,0 +1,8 @@
+{
+  "id": "CASE-002",
+  "title": "敏感資訊洩漏（日誌或例外訊息）",
+  "description": "將密碼、Token、API Key、個人資料等敏感資訊直接輸出至日誌或錯誤訊息，可能導致資訊洩漏",
+  "keywords": ["password", "token", "secret", "api key", "log", "print", "exception", "stacktrace", "sensitive", "credential"],
+  "category": "sec",
+  "escalate_to": "high"
+}

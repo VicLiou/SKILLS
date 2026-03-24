@@ -1,0 +1,8 @@
+{
+  "id": "CASE-001",
+  "title": "SQL 注入（字串拼接）",
+  "description": "直接將用戶輸入拼接進 SQL 語句，未使用參數化查詢，導致 SQL Injection 風險",
+  "keywords": ["sql", "query", "concat", "string format", "user input", "execute", "select", "insert", "update", "delete"],
+  "category": "sec",
+  "escalate_to": "high"
+}

@@ -41,8 +41,10 @@ def _expand_issue(issue: dict[str, Any], filename: str) -> dict[str, Any]:
         "line":        issue.get("ln"),
         "description": issue.get("desc", ""),
         "suggestion":  issue.get("sugg", ""),
-        "code":        issue.get("code", ""),   # 建議的程式碼片段
+        "code":          issue.get("code", ""),
+        "matched_cases": issue.get("matched_cases", []),  # 命中的歷史案例
     }
+
 
 
 def _collect_issues(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -94,7 +96,6 @@ def _render_issue_row(issue: dict[str, Any]) -> str:
     if issue.get("suggestion"):
         rows.append(f"  - 建議：{issue['suggestion']}")
     if issue.get("code"):
-        # 自動偵測語言（简單判斷）
         code_block = issue["code"]
         lang = _detect_lang(issue["file"])
         rows.append("  - 建議程式碼：")
@@ -102,7 +103,10 @@ def _render_issue_row(issue: dict[str, Any]) -> str:
         for code_line in code_block.splitlines():
             rows.append(f"    {code_line}")
         rows.append("    ```")
+    for mc in issue.get("matched_cases", []):
+        rows.append(f"  - ⚠️ 命中歷史案例：**[{mc['id']}]** {mc['title']}")
     return "\n".join(rows)
+
 
 
 def generate_report(
@@ -121,7 +125,6 @@ def generate_report(
         repo_path:   被審查的 git 專案路徑（僅供報告顯示）
         branch:      當前分支名稱（僅供報告顯示）
         base_branch: 基礎分支名稱（僅供報告顯示）
-
     Returns:
         輸出報告的 Path 物件
     """
@@ -185,6 +188,9 @@ def generate_report(
                 lines.append("")
 
         lines += ["---", ""]
+
+    lines.append("> *此報告由 Code Review Skill 自動產出*")
+    lines.append("")
 
     # ── 寫出檔案 ──
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,19 @@
+# 統一換行符設定：所有文字檔案在 repo 中使用 LF
+* text=auto eol=lf
+
+# Python 腳本
+*.py text eol=lf
+
+# JSON 設定檔
+*.json text eol=lf
+
+# Markdown 文件
+*.md text eol=lf
+
+# diff 暫存檔
+*.diff text eol=lf
+
+# 二進位檔案不轉換
+*.png binary
+*.jpg binary
+*.zip binary

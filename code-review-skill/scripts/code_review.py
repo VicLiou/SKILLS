@@ -24,6 +24,7 @@ _SCRIPTS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from agent_worker import detect_base_branch, save_diff_for_analysis
+from case_matcher import match_and_escalate
 from report_generator import generate_report
 
 
@@ -31,9 +32,10 @@ from report_generator import generate_report
 
 DEFAULT_MAX_WORKERS = 10
 DIFF_FILTER = "ACM"        # Added / Copied / Modified
-CR_DIFF_DIR = "cr/diff"    # 執行緒儲存 .diff 的目錄
+CR_DIFF_DIR = "cr/diff"          # 執行緒儲存 .diff 的目錄
 CR_ANALYSIS_DIR = "cr/analysis"  # AI 代理寫入 JSON 結果的目錄
 CR_REPORT_DIR = "cr/report"      # 彙整報告輸出目錄
+CR_CASES_DIR = "cases"           # 歷史問題案例庫目錄
 
 # 僅掃描程式碼相關副檔名（可透過 --extensions 覆蓋）
 CODE_EXTENSIONS: frozenset[str] = frozenset({
@@ -183,6 +185,19 @@ def collect_phase(
 
 # ─── Phase 2：彙整報告 + 清理 ────────────────────────────────────────────────
 
+def _default_ai_match_fn(prompt: str) -> str:
+    """
+    預設 AI 對比函式：將 prompt 印出，從 stdin 讀取代理的判斷結果。
+    輸入格式：["CASE-001"] 或 []
+    """
+    print("\n" + "-" * 40)
+    print(prompt)
+    print("-" * 40)
+    if not sys.stdin.isatty():
+        return sys.stdin.readline().strip()
+    return input("[MATCH] 請輸入命中案例 ID 陣列（如 [\"CASE-001\"] 或 []）：").strip()
+
+
 def cleanup_diff_dir(diff_dir: str) -> None:
     """刪除 diff_dir 下所有 .diff 檔案（清理掃描完畢後的暫存 diff）。"""
     diff_path = Path(diff_dir)
@@ -209,13 +224,12 @@ def report_phase(
     branch: str,
     diff_dir: str,
     base_branch: str = "",
+    cases_dir: str = "",
 ) -> Path | None:
     """
-    Phase 2：讀取 analysis_dir 中的 *_result.json，產出彙整報告至 report_dir。
+    Phase 2：讀取 analysis_dir 中的 *_result.json，
+    執行案例對比（若 cases_dir 存在），產出彙整報告至 report_dir。
     報告產出後自動清除 diff_dir 下的暫存 diff 檔案。
-
-    Returns:
-        報告輸出路徑；若無結果檔案則回傳 None
     """
     analysis_path = Path(analysis_dir)
     result_files = sorted(analysis_path.glob("*_result.json"))
@@ -234,6 +248,15 @@ def report_phase(
             results.append(data)
         except Exception as e:
             print(f"[WARN] 讀取 {json_file.name} 失敗：{e}", file=sys.stderr)
+
+    # 案例對比（兩層預篩 + AI 語意比對）
+    if cases_dir:
+        print("[INFO] 執行歷史案例對比...")
+        results = match_and_escalate(
+            results=results,
+            cases_dir=cases_dir,
+            ai_match_fn=_default_ai_match_fn,
+        )
 
     Path(report_dir).mkdir(parents=True, exist_ok=True)
     output_path = Path(report_dir) / "code_review_report.md"
@@ -286,8 +309,12 @@ def main() -> None:
         help="指定基礎分支（留空則自動偵測 main/master）",
     )
     parser.add_argument(
+        "--cases-dir", default=CR_CASES_DIR,
+        help=f"歷史問題案例庫目錄（預設：{CR_CASES_DIR}，留空則跳過對比）",
+    )
+    parser.add_argument(
         "--report", action="store_true",
-        help="執行 Phase 2：讀取分析結果並產出彙整報告，完成後清除 diff 暫存",
+        help="執行 Phase 2：讀取分析結果並產出彙整報告",
     )
     args = parser.parse_args()
 
@@ -303,7 +330,8 @@ def main() -> None:
     # ── Phase 2：報告模式 ──
     if args.report:
         output_path = report_phase(
-            args.result_dir, args.report_dir, repo_path, branch, args.diff_dir, base_branch
+            args.result_dir, args.report_dir, repo_path, branch,
+            args.diff_dir, base_branch, args.cases_dir,
         )
         if output_path:
             print(f"[INFO] ✅ 報告已輸出至：{output_path.resolve()}")
