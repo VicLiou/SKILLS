@@ -24,7 +24,7 @@ _SCRIPTS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from agent_worker import detect_base_branch, save_diff_for_analysis
-from case_matcher import match_and_escalate, generate_cases_reference
+from case_matcher import match_and_escalate, inject_relevant_cases_to_diff, load_cases
 from report_generator import generate_report
 
 
@@ -128,12 +128,15 @@ def _collect_worker(
     diff_dir: str,
     result_dir: str,
     base_branch: str,
+    cases: list[dict[str, Any]],
     progress: _ProgressTracker,
 ) -> tuple[str, Path | None]:
-    """單一執行緒工作：取得 diff 並儲存至 diff_dir。"""
+    """單一執行緒工作：取得 diff 並儲存至 diff_dir，同時注入歷史案例提示。"""
     try:
         saved_path = save_diff_for_analysis(file_path, repo_path, diff_dir, result_dir, base_branch)
         if saved_path:
+            if cases:
+                inject_relevant_cases_to_diff(str(saved_path), cases)
             progress.log(file_path, "✓ diff 已儲存")
         else:
             progress.log(file_path, "- 無差異，跳過")
@@ -149,6 +152,7 @@ def collect_phase(
     diff_dir: str,
     result_dir: str,
     base_branch: str,
+    cases: list[dict[str, Any]],
     max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> list[Path]:
     """
@@ -172,7 +176,7 @@ def collect_phase(
     with ThreadPoolExecutor(max_workers=effective_workers) as executor:
         futures = {
             executor.submit(
-                _collect_worker, f, repo_path, diff_dir, result_dir, base_branch, progress
+                _collect_worker, f, repo_path, diff_dir, result_dir, base_branch, cases, progress
             ): f
             for f in files
         }
@@ -347,25 +351,19 @@ def main() -> None:
         print(f"  - {f}")
     print()
 
-    saved_diffs = collect_phase(
-        code_files, repo_path, args.diff_dir, args.result_dir, base_branch, args.workers
-    )
+    cases = load_cases(args.cases_dir) if args.cases_dir else []
 
-    # 產生案例參考檔供 Phase 2 使用
-    cases_ref_path = Path(args.result_dir) / "cases_reference.json"
-    if args.cases_dir:
-        generate_cases_reference(args.cases_dir, str(cases_ref_path))
+    saved_diffs = collect_phase(
+        code_files, repo_path, args.diff_dir, args.result_dir, base_branch, cases, args.workers
+    )
 
     # 輸出後續操作說明給 AI 代理
     sep = "=" * 60
     print(f"\n{sep}")
     print(f"[✅ Phase 1 完成] {len(saved_diffs)} 個 diff 已儲存至 {args.diff_dir}/")
     print("\n[NEXT STEP] (AI Agent) 接下來請依照指示進行分析：")
-    if args.cases_dir and cases_ref_path.exists():
-        print(f"  1. 首先閱讀 {cases_ref_path} 了解歷史案例庫。")
-        print("  2. 分析每個 diff，若發現有缺陷與案例相符，請在其 JSON 輸出內加上 `\"matched_case_ids\": [\"CASE-XXX\"]`。")
-    else:
-        print("  1. 分析每個 diff。")
+    print("  1. 針對每個 diff 檔案進行**全面的缺陷掃描**。")
+    print("  2. 若 diff 檔案最前方有提示包含 [CASE-XXX] 關鍵字，請在找出所有 Bug 後，一併檢查是否有命中歷史案例。若有，請在其 JSON 輸出內加上 `\"matched_case_ids\": [\"CASE-XXX\"]`。")
     print("\n[需分析的檔案] 將 JSON 結果寫入對應的 _result.json：\n")
     for diff_file in saved_diffs:
         result_name = diff_file.name.replace("_diff.diff", "_result.json")

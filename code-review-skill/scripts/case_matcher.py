@@ -49,39 +49,63 @@ def load_cases(cases_dir: str) -> list[dict[str, Any]]:
     return cases
 
 
-# ─── 案例參考生成（Phase 1） ──────────────────────────────────────────────────
+# ─── 案例提示注入（Phase 1） ──────────────────────────────────────────────────
 
-def generate_cases_reference(cases_dir: str, output_path: str) -> bool:
+def inject_relevant_cases_to_diff(diff_path: str, cases: list[dict[str, Any]]) -> bool:
     """
-    讀取 cases_dir 下的所有案例，產出精簡版的參考清單，供 AI 代理在 Phase 2 使用。
+    讀取 diff 檔案內容，若發現修改內容符合歷史案例關鍵字，
+    則將案例提示注入至 diff 檔案的最上方供 AI 閱讀。
     
     Args:
-        cases_dir: 案例庫目錄
-        output_path: 產出的參考檔案路徑 (例如 cr/cases_reference.json)
-    
+        diff_path: 已生成的 .diff 檔案路徑
+        cases:     預先載入的歷史案例清單
+        
     Returns:
-        若成功生成且包含至少一個案例回傳 True，否則回傳 False
+        是否有注入任何案例提示
     """
-    cases = load_cases(cases_dir)
     if not cases:
         return False
         
-    # 只提取 AI 分析時需要的必要資訊
-    refs = []
-    for c in cases:
-        refs.append({
-            "id": c.get("id"),
-            "category": c.get("category"),
-            "title": c.get("title"),
-            "keywords": c.get("keywords", []),
-            "description": c.get("description", ""),
-            "escalate_to": c.get("escalate_to", "high")
-        })
+    diff_file = Path(diff_path)
+    if not diff_file.exists():
+        return False
         
-    out_file = Path(output_path)
-    out_file.parent.mkdir(parents=True, exist_ok=True)
-    out_file.write_text(json.dumps(refs, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[INFO] 歷史案例參考已產出至：{output_path}")
+    content = diff_file.read_text(encoding="utf-8")
+    content_lower = content.lower()
+    
+    matched_cases = []
+    for c in cases:
+        keywords = c.get("keywords", [])
+        if not keywords:
+            continue
+        # 只要有任何一個關鍵字出現在 diff 中 (不區分大小寫)
+        if any(k.lower() in content_lower for k in keywords):
+            matched_cases.append(c)
+            
+    if not matched_cases:
+        return False
+        
+    # 建立注入的字串
+    lines = []
+    lines.append("=" * 60)
+    lines.append("⚠️ [CODE REVIEW SKILL AUTO-INJECTED CONTEXT] ⚠️")
+    lines.append("經腳本初步掃描，此檔案的修改內容含有以下歷史案例關鍵字：")
+    lines.append("")
+    
+    for c in matched_cases:
+        lines.append(f"  - [{c['id']}] ({c['category']}) {c['title']}")
+        if c.get('description'):
+            desc = c['description'].replace('\n', ' ')
+            lines.append(f"    說明：{desc}")
+            
+    lines.append("")
+    lines.append("👉 請在「全面審查所有 Bug」的同時，特別留意是否發生上述歷史問題。")
+    lines.append("👉 若確實發生，請在輸出的 JSON 中加入 `\"matched_case_ids\": [\"...\"]`。")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append(content)
+    
+    diff_file.write_text("\n".join(lines), encoding="utf-8")
     return True
 
 

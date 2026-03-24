@@ -41,9 +41,9 @@ python /path/to/code-review-skill/scripts/code_review.py --repo /path/to/project
 
 Phase 1 完成後，AI 代理（你）需要：
 
-1. 檢查並閱讀 `cr/analysis/cases_reference.json`（如果有的話），以了解專案的歷史錯誤案例。
-2. 讀取每個 `cr/diff/*_diff.diff` 的內容，針對 diff 進行缺陷掃描。
-3. 若發現問題與歷史案例相符，請將命中案例的 ID 放進 `matched_case_ids` 陣列中。
+1. **全面缺陷掃描**：讀取每個 `cr/diff/*_diff.diff` 的內容進行無死角的 Code Review。你的首要任務是找出**所有**業務邏輯、安全性與效能缺陷。
+2. **處理預注入的案例提示（選做）**：在部分 `.diff` 檔案的頂端，可能會自動產生包含了 `[CASE-XXX]` 關鍵字的 `AUTO-INJECTED CONTEXT` 區塊。這表示該檔案的變更可能與歷史錯誤高度相關。
+3. **標註歷史案例**：請在你找出所有 Bug 之後，一併檢查是否有 Bug 完全符合頂部提示的案例特徵。若確實命中，請將命中案例的 ID 放入輸出的 `matched_case_ids` 陣列中。
 4. 將結果寫入對應的 `cr/analysis/*_result.json`。
 
 > **可並行處理**（使用多個工具呼叫同時分析多個檔案以節省時間）
