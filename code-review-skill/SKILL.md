@@ -18,11 +18,11 @@ code-review-skill/
 
 ## 輸出路徑
 
-| 類型 | 路徑 |
-|------|------|
-| 個別檔案 diff（供 AI 分析） | `cr/diff/<filename>_diff.diff` |
+| 類型                        | 路徑                                 |
+| --------------------------- | ------------------------------------ |
+| 個別檔案 diff（供 AI 分析） | `cr/diff/<filename>_diff.diff`       |
 | 個別檔案分析結果（AI 寫入） | `cr/analysis/<filename>_result.json` |
-| 彙整報告 | `cr/report/code_review_report.md` |
+| 彙整報告                    | `cr/report/code_review_report.md`    |
 
 ## 執行流程
 
@@ -48,14 +48,16 @@ Phase 1 完成後，AI 代理（你）需要：
 
 > **可並行處理**（使用多個工具呼叫同時分析多個檔案以節省時間）
 
-### Phase 3：產出彙整報告（清除 diff 暫存）
+### Phase 3：產出彙整報告與案例對比（清除 diff 暫存）
 
 ```bash
 python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/to/project
 ```
 
-- 讀取 `cr/analysis/*_result.json` 產出 `cr/report/code_review_report.md`
-- 報告产出後自動刪除 `cr/diff/` 下所有暫存 `.diff` 檔案
+- 執行時，腳本會自動以關鍵字預篩歷史案例（`cases/*.json`）。
+- **【重要互動】** 若有發現疑似命中的案例，腳本會在終端機暫停並顯示 `[MATCH] 請輸入命中案例 ID 陣列...`。此時身為 AI 代理的你，必須閱讀終端機印出的對比提示，並直接回傳 JSON 陣列（例：`["CASE-001"]`，無命中時回傳 `[]`）。
+- 完成對比後，讀取 `cr/analysis/*_result.json` 產出 `cr/report/code_review_report.md`（若命中案例，嚴重等級會自動提升至 High）。
+- 報告產出後自動刪除 `cr/diff/` 下所有暫存 `.diff` 檔案。
 
 ## 分析結果 JSON 格式
 
@@ -70,19 +72,21 @@ python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/t
       "sev": "high",
       "ln": 42,
       "desc": "問題描述（精簡）",
-      "sugg": "修改建議（精簡）"
+      "sugg": "修改建議（必填）",
+      "code": "建議程式碼片段（必填）"
     }
   ]
 }
 ```
 
-| 欄位 | 說明 | 允許值 |
-|------|------|--------|
-| `cat` | 問題分類 | `bl`（業務邏輯）/ `sec`（安全性）/ `perf`（效能） |
-| `sev` | 嚴重程度 | `critical` / `high` / `medium` / `low` / `info` |
-| `ln`  | 行號（可選） | 整數或 `null` |
-| `desc` | 問題描述 | 精簡字串 |
-| `sugg` | 修改建議 | **必填**，提供具體可操作的修復方式，不得留空 |
+| 欄位   | 說明         | 允許值                                            |
+| ------ | ------------ | ------------------------------------------------- |
+| `cat`  | 問題分類     | `bl`（業務邏輯）/ `sec`（安全性）/ `perf`（效能） |
+| `sev`  | 嚴重程度     | `critical` / `high` / `medium` / `low` / `info`   |
+| `ln`   | 行號（可選） | 整數或 `null`                                     |
+| `desc` | 問題描述     | 精簡字串                                          |
+| `sugg` | 修改建議     | **必填**，提供具體可操作的修復方式，不得留空      |
+| `code` | 建議程式碼   | **必填**，提供修復後的程式碼片段，以利報告渲染    |
 
 > 無問題時：`{"f": "檔名", "i": []}`
 > JSON 前後不輸出任何說明文字
@@ -95,10 +99,10 @@ python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/t
 
 ## 等級說明
 
-| 等級 | 適用情境 |
-|------|---------|
+| 等級       | 適用情境               |
+| ---------- | ---------------------- |
 | `critical` | 嚴重漏洞、資料遺失風險 |
-| `high` | 高風險，應在合併前修復 |
-| `medium` | 中等風險，建議修復 |
-| `low` | 低風險，可考慮改善 |
-| `info` | 最佳實踐建議 |
+| `high`     | 高風險，應在合併前修復 |
+| `medium`   | 中等風險，建議修復     |
+| `low`      | 低風險，可考慮改善     |
+| `info`     | 最佳實踐建議           |
