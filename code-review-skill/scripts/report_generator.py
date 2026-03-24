@@ -41,6 +41,7 @@ def _expand_issue(issue: dict[str, Any], filename: str) -> dict[str, Any]:
         "line":        issue.get("ln"),
         "description": issue.get("desc", ""),
         "suggestion":  issue.get("sugg", ""),
+        "code":        issue.get("code", ""),   # 建議的程式碼片段
     }
 
 
@@ -57,7 +58,9 @@ def _collect_issues(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _build_summary(issues: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     """統計各分類 × 嚴重程度的問題數量。"""
-    summary: dict[str, dict[str, int]] = {cat: {sev: 0 for sev in SEVERITY_ORDER} for cat in CATEGORY_ORDER}
+    summary: dict[str, dict[str, int]] = {
+        cat: dict.fromkeys(SEVERITY_ORDER, 0) for cat in CATEGORY_ORDER
+    }
     for issue in issues:
         cat = issue["category"]
         sev = issue["severity"]
@@ -66,17 +69,40 @@ def _build_summary(issues: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     return summary
 
 
+def _detect_lang(filename: str) -> str:
+    """從檔名判斷程式語言，用於 Markdown code block 左括標記。"""
+    return {
+        ".py": "python", ".java": "java", ".js": "javascript",
+        ".jsx": "jsx", ".ts": "typescript", ".tsx": "tsx",
+        ".go": "go", ".rb": "ruby", ".php": "php",
+        ".cs": "csharp", ".cpp": "cpp", ".cc": "cpp",
+        ".c": "c", ".h": "c", ".hpp": "cpp",
+        ".kt": "kotlin", ".swift": "swift", ".rs": "rust",
+        ".scala": "scala", ".sh": "bash", ".ps1": "powershell", ".sql": "sql",
+    }.get(Path(filename).suffix.lower(), "")
+
+
 def _render_issue_row(issue: dict[str, Any]) -> str:
-    """渲染單一 issue 為 Markdown 條目。"""
+
+    """渲染單一 issue 為 Markdown 條目（含建議程式碼片段）。"""
     line_info = f" (L{issue['line']})" if issue.get("line") else ""
     file_ref = f"`{issue['file']}`{line_info}"
-    lines = [
+    rows = [
         f"- **{file_ref}**",
         f"  - 問題：{issue['description']}",
     ]
     if issue.get("suggestion"):
-        lines.append(f"  - 建議：{issue['suggestion']}")
-    return "\n".join(lines)
+        rows.append(f"  - 建議：{issue['suggestion']}")
+    if issue.get("code"):
+        # 自動偵測語言（简單判斷）
+        code_block = issue["code"]
+        lang = _detect_lang(issue["file"])
+        rows.append("  - 建議程式碼：")
+        rows.append(f"    ```{lang}")
+        for code_line in code_block.splitlines():
+            rows.append(f"    {code_line}")
+        rows.append("    ```")
+    return "\n".join(rows)
 
 
 def generate_report(
@@ -84,15 +110,17 @@ def generate_report(
     output_path: str | Path = "./code_review_report.md",
     repo_path: str = "",
     branch: str = "",
+    base_branch: str = "",
 ) -> Path:
     """
     彙整分析結果並產出 Markdown 報告。
 
     Args:
         results:     所有子代理回傳的結構化結果清單
-        output_path: 報告輸出路徑（預設：當前目錄）
+        output_path: 報告輸出路徑
         repo_path:   被審查的 git 專案路徑（僅供報告顯示）
         branch:      當前分支名稱（僅供報告顯示）
+        base_branch: 基礎分支名稱（僅供報告顯示）
 
     Returns:
         輸出報告的 Path 物件
@@ -115,7 +143,8 @@ def generate_report(
     if repo_path:
         lines.append(f"- **專案路徑**：`{repo_path}`")
     if branch:
-        lines.append(f"- **分析分支**：`{branch}` vs `main`")
+        base_label = base_branch if base_branch else "base"
+        lines.append(f"- **分析分支**：`{branch}` vs `{base_label}`")
     lines += [
         f"- **分析檔案數**：{len(results)} 個",
         f"- **發現問題總數**：{total} 個",

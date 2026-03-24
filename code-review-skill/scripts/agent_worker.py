@@ -137,8 +137,8 @@ def save_diff_for_analysis(
     prompt = (
         f"分析以下 git diff，將 JSON 結果寫入 {result_path}（不含其他文字）：\n"
         f"格式：{{\"f\":\"檔案路徑\",\"i\":[{{\"cat\":\"bl|sec|perf\",\"sev\":\"critical|high|medium|low|info\","
-        f"\"ln\":行號或null,\"desc\":\"問題描述\",\"sugg\":\"具體可執行的修復建議【必填，不得留空】\"}}]}}\n"
-        f"cat: bl=業務邏輯 sec=安全性 perf=效能 | 無問題時 i=[] | desc 精簡 | sugg 必須提供可操作修法\n"
+        f"\"ln\":行號或null,\"desc\":\"問題描述\",\"sugg\":\"建議【必填】\",\"code\":\"建議程式碼片段【必填】\"}}]}}\n"
+        f"cat: bl=業務邏輯 sec=安全性 perf=效能 | 無問題時 i=[] | sugg/code 必填\n"
         f"---\n"
         f"File: {file_path}\n"
         f"{diff}"

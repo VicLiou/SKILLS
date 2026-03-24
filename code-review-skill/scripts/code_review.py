@@ -208,6 +208,7 @@ def report_phase(
     repo_path: str,
     branch: str,
     diff_dir: str,
+    base_branch: str = "",
 ) -> Path | None:
     """
     Phase 2：讀取 analysis_dir 中的 *_result.json，產出彙整報告至 report_dir。
@@ -242,6 +243,7 @@ def report_phase(
         output_path=output_path,
         repo_path=repo_path,
         branch=branch,
+        base_branch=base_branch,
     )
 
     # 報告產出後清除暫存 diff 檔案
@@ -301,7 +303,7 @@ def main() -> None:
     # ── Phase 2：報告模式 ──
     if args.report:
         output_path = report_phase(
-            args.result_dir, args.report_dir, repo_path, branch, args.diff_dir
+            args.result_dir, args.report_dir, repo_path, branch, args.diff_dir, base_branch
         )
         if output_path:
             print(f"[INFO] ✅ 報告已輸出至：{output_path.resolve()}")
