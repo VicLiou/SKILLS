@@ -1,16 +1,16 @@
 """
 code_review.py
-Code Review 主程式：協調整個分析流程
-- 取得差異檔案清單
-- 使用 ThreadPoolExecutor（最多 10 個執行緒）動態分派子代理
-- 收集結果並產出 Markdown 報告
+Code Review 主程式：多執行緒收集 diff → AI 代理分析 → 彙整報告
+
+執行流程：
+  Phase 1（預設）：多執行緒收集所有差異檔案的 diff，儲存至 cr/analysis/*_diff.md
+  Phase 2（--report）：讀取 cr/analysis/*_result.json，產出 cr/report/code_review_report.md
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import queue
 import subprocess
 import sys
 import threading
@@ -22,7 +22,7 @@ from typing import Any
 _SCRIPTS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-from agent_worker import analyze_file
+from agent_worker import BASE_BRANCH, save_diff_for_analysis
 from report_generator import generate_report
 
 
@@ -30,6 +30,8 @@ from report_generator import generate_report
 
 DEFAULT_MAX_WORKERS = 10
 DIFF_FILTER = "ACM"  # Added / Copied / Modified
+CR_ANALYSIS_DIR = "cr/analysis/diff"
+CR_REPORT_DIR = "cr/report"
 
 
 # ─── Git 工具函式 ─────────────────────────────────────────────────────────────
@@ -54,19 +56,17 @@ def _run_git(args: list[str], cwd: str) -> str:
 
 
 def get_changed_files(repo_path: str) -> list[str]:
-    """取得當前分支與 main 分支的差異檔案清單。"""
+    """取得當前分支與 BASE_BRANCH 的差異檔案清單。"""
     output = _run_git(
-        ["diff", "main...HEAD", "--name-only", f"--diff-filter={DIFF_FILTER}"],
+        ["diff", f"{BASE_BRANCH}...HEAD", "--name-only", f"--diff-filter={DIFF_FILTER}"],
         cwd=repo_path,
     )
-    files = [f.strip() for f in output.splitlines() if f.strip()]
-    return files
+    return [f.strip() for f in output.splitlines() if f.strip()]
 
 
 def get_current_branch(repo_path: str) -> str:
     """取得當前分支名稱。"""
-    output = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path)
-    return output.strip()
+    return _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path).strip()
 
 
 # ─── 進度追蹤 ────────────────────────────────────────────────────────────────
@@ -79,163 +79,183 @@ class _ProgressTracker:
         self.completed = 0
         self._lock = threading.Lock()
 
-    def increment(self) -> int:
+    def log(self, file_path: str, status: str) -> None:
         with self._lock:
             self.completed += 1
-            return self.completed
-
-    def print_progress(self, file_path: str) -> None:
-        completed = self.increment()
-        print(f"[{completed:>3}/{self.total}] 完成分析：{file_path}")
+            n = self.completed
+        print(f"[{n:>3}/{self.total}] {status}：{file_path}")
 
 
-# ─── Work Queue 多執行緒分派 ──────────────────────────────────────────────────
+# ─── Phase 1：多執行緒收集 diff ──────────────────────────────────────────────
 
-def _worker_task(
+def _collect_worker(
     file_path: str,
     repo_path: str,
-    ai_analyze_fn: Any,
+    analysis_dir: str,
     progress: _ProgressTracker,
-) -> dict[str, Any]:
-    """單一工作執行緒的任務函式。"""
+) -> tuple[str, Path | None]:
+    """單一執行緒工作：取得 diff 並儲存至 analysis_dir。"""
     try:
-        result = analyze_file(file_path, repo_path, ai_analyze_fn)
+        saved_path = save_diff_for_analysis(file_path, repo_path, analysis_dir)
+        if saved_path:
+            progress.log(file_path, "✓ diff 已儲存")
+        else:
+            progress.log(file_path, "- 無差異，跳過")
+        return file_path, saved_path
     except Exception as e:
-        print(f"[ERROR] 分析 {file_path} 時發生例外：{e}", file=sys.stderr)
-        result = {"f": file_path, "i": [], "_error": str(e)}
-    finally:
-        progress.print_progress(file_path)
-    return result
+        progress.log(file_path, f"✗ 錯誤：{e}")
+        return file_path, None
 
 
-def run_analysis(
+def collect_phase(
     files: list[str],
     repo_path: str,
-    ai_analyze_fn: Any,
+    analysis_dir: str,
     max_workers: int = DEFAULT_MAX_WORKERS,
-) -> list[dict[str, Any]]:
+) -> list[Path]:
     """
-    使用 ThreadPoolExecutor 動態分派子代理分析所有差異檔案。
-    完成的執行緒立即接收下一個任務（Work Queue 模式）。
-
-    Args:
-        files:          待分析的檔案路徑清單
-        repo_path:      git 專案根目錄路徑
-        ai_analyze_fn:  AI 分析函式（接收 prompt 字串，回傳 JSON 字串）
-        max_workers:    最大執行緒數（預設 10）
+    Phase 1：使用 ThreadPoolExecutor（Work Queue 模式）並行收集所有檔案的 diff。
+    完成的執行緒自動接取下一個檔案，無需手動監控。
 
     Returns:
-        所有子代理回傳的結構化結果清單
+        成功儲存的 _diff.md 路徑清單
     """
     total = len(files)
-    progress = _ProgressTracker(total)
-    results: list[dict[str, Any]] = []
-
     effective_workers = min(max_workers, total)
-    print(f"[INFO] 共 {total} 個檔案，使用 {effective_workers} 個執行緒分析中...\n")
+    progress = _ProgressTracker(total)
 
-    # ThreadPoolExecutor 搭配 submit 實現動態 Work Queue：
-    # 每個 future 完成後立即接收下一個任務，確保執行緒數量始終飽和
+    print(f"[INFO] 共 {total} 個檔案，使用 {effective_workers} 個執行緒收集 diff...\n")
+    Path(analysis_dir).mkdir(parents=True, exist_ok=True)
+
+    saved_paths: list[Path] = []
+
+    # Work Queue 模式：ThreadPoolExecutor 自動管理 Queue，
+    # 完成的執行緒立即接取下一個 future
     with ThreadPoolExecutor(max_workers=effective_workers) as executor:
         futures = {
-            executor.submit(_worker_task, f, repo_path, ai_analyze_fn, progress): f
+            executor.submit(_collect_worker, f, repo_path, analysis_dir, progress): f
             for f in files
         }
         for future in as_completed(futures):
-            try:
-                results.append(future.result())
-            except Exception as e:
-                file_path = futures[future]
-                print(f"[ERROR] {file_path} 的 future 執行失敗：{e}", file=sys.stderr)
-                results.append({"f": file_path, "i": [], "_error": str(e)})
+            _, saved = future.result()
+            if saved:
+                saved_paths.append(saved)
 
-    return results
+    return saved_paths
 
 
-# ─── AI 分析函式（預設實作：輸出 prompt 並等待使用者輸入）────────────────────
+# ─── Phase 2：彙整報告 ───────────────────────────────────────────────────────
 
-def _default_ai_analyze_fn(prompt: str) -> str:
+def report_phase(
+    analysis_dir: str,
+    report_dir: str,
+    repo_path: str,
+    branch: str,
+) -> Path | None:
     """
-    預設 AI 分析函式：將 prompt 印出後，由使用此 Skill 的 AI 代理從 stdin 讀取結果。
-    若從管道（pipe）讀取，則直接讀取 stdin；否則提示使用者輸入。
-    """
-    print("\n" + "=" * 60)
-    print(prompt)
-    print("=" * 60)
+    Phase 2：讀取 analysis_dir 中的 *_result.json，產出彙整報告至 report_dir。
 
-    if not sys.stdin.isatty():
-        # 管道模式：從 stdin 讀取完整輸入（直到 EOF）
-        return sys.stdin.read()
-    else:
-        # 互動模式：提示輸入（按 Ctrl+Z / Ctrl+D 結束）
-        print("[PROMPT] 請輸入 JSON 分析結果（結束後按 Ctrl+Z (Windows) 或 Ctrl+D (Unix)）：")
-        lines = []
+    Returns:
+        報告輸出路徑；若無結果檔案則回傳 None
+    """
+    analysis_path = Path(analysis_dir)
+    result_files = sorted(analysis_path.glob("*_result.json"))
+
+    if not result_files:
+        print(f"[WARN] 在 {analysis_dir} 中找不到任何 *_result.json 檔案。")
+        print("[HINT] 請先讓 AI 代理分析 *_diff.md 並將結果寫入對應的 *_result.json，再執行 --report。")
+        return None
+
+    print(f"[INFO] 找到 {len(result_files)} 個分析結果，正在彙整報告...")
+
+    results: list[dict[str, Any]] = []
+    for json_file in result_files:
         try:
-            while True:
-                lines.append(input())
-        except EOFError:
-            pass
-        return "\n".join(lines)
+            data = json.loads(json_file.read_text(encoding="utf-8"))
+            results.append(data)
+        except Exception as e:
+            print(f"[WARN] 讀取 {json_file.name} 失敗：{e}", file=sys.stderr)
+
+    Path(report_dir).mkdir(parents=True, exist_ok=True)
+    output_path = Path(report_dir) / "code_review_report.md"
+
+    return generate_report(
+        results=results,
+        output_path=output_path,
+        repo_path=repo_path,
+        branch=branch,
+    )
 
 
 # ─── 主程式入口 ───────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Code Review 主程式：分析當前分支與 main 的差異並產出報告"
+        description=(
+            "Code Review 主程式\n"
+            "  不帶 --report：Phase 1 — 多執行緒收集 diff，儲存至 cr/analysis/*_diff.md\n"
+            "  帶 --report  ：Phase 2 — 讀取 cr/analysis/*_result.json，輸出彙整報告"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--repo", default=".", help="git 專案根目錄（預設：當前目錄）")
     parser.add_argument(
-        "--repo",
-        default=".",
-        help="git 專案根目錄路徑（預設：當前目錄）",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=DEFAULT_MAX_WORKERS,
+        "--workers", type=int, default=DEFAULT_MAX_WORKERS,
         help=f"最大執行緒數（預設：{DEFAULT_MAX_WORKERS}）",
     )
     parser.add_argument(
-        "--output",
-        default="./code_review_report.md",
-        help="報告輸出路徑（預設：./code_review_report.md）",
+        "--analysis-dir", default=CR_ANALYSIS_DIR,
+        help=f"diff / 分析結果存放目錄（預設：{CR_ANALYSIS_DIR}）",
+    )
+    parser.add_argument(
+        "--report-dir", default=CR_REPORT_DIR,
+        help=f"彙整報告輸出目錄（預設：{CR_REPORT_DIR}）",
+    )
+    parser.add_argument(
+        "--report", action="store_true",
+        help="執行 Phase 2：讀取分析結果並產出彙整報告",
     )
     args = parser.parse_args()
 
     repo_path = str(Path(args.repo).resolve())
     print(f"[INFO] git 專案路徑：{repo_path}")
+    print(f"[INFO] 基礎分支：{BASE_BRANCH}")
 
-    # 1. 取得差異檔案清單
+    branch = get_current_branch(repo_path)
+
+    # ── Phase 2：報告模式 ──
+    if args.report:
+        output_path = report_phase(args.analysis_dir, args.report_dir, repo_path, branch)
+        if output_path:
+            print(f"[INFO] ✅ 報告已輸出至：{output_path.resolve()}")
+        return
+
+    # ── Phase 1：收集 diff ──
     print("[INFO] 正在取得差異檔案清單...")
     files = get_changed_files(repo_path)
 
     if not files:
-        print("[INFO] 當前分支與 main 無差異，無需進行 Code Review。")
+        print(f"[INFO] 當前分支與 {BASE_BRANCH} 無差異，無需進行 Code Review。")
         sys.exit(0)
 
-    branch = get_current_branch(repo_path)
     print(f"[INFO] 當前分支：{branch}，共 {len(files)} 個差異檔案：")
     for f in files:
         print(f"  - {f}")
     print()
 
-    # 2. 執行多執行緒分析（Work Queue 模式）
-    results = run_analysis(
-        files=files,
-        repo_path=repo_path,
-        ai_analyze_fn=_default_ai_analyze_fn,
-        max_workers=args.workers,
-    )
+    saved_diffs = collect_phase(files, repo_path, args.analysis_dir, args.workers)
 
-    # 3. 產出報告
-    print(f"\n[INFO] 正在產出報告...")
-    output_path = generate_report(
-        results=results,
-        output_path=args.output,
-        repo_path=repo_path,
-        branch=branch,
-    )
-    print(f"[INFO] ✅ 報告已輸出至：{output_path.resolve()}")
+    # 輸出後續操作說明給 AI 代理
+    sep = "=" * 60
+    print(f"\n{sep}")
+    print(f"[✅ Phase 1 完成] {len(saved_diffs)} 個 diff 已儲存至 {args.analysis_dir}/")
+    print("\n[NEXT STEP] 請分析以下檔案並將 JSON 結果寫入對應的 _result.json：\n")
+    for diff_file in saved_diffs:
+        result_name = diff_file.name.replace("_diff.md", "_result.json")
+        print(f"  📄 {diff_file}  →  {diff_file.parent / result_name}")
+    print("\n[NEXT STEP] 全部分析完成後執行：")
+    print(f"  python code_review.py --report --repo {args.repo}")
+    print(sep)
 
 
 if __name__ == "__main__":

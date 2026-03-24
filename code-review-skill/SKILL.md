@@ -1,16 +1,9 @@
 ---
 name: code-review
-description: 自動比對當前分支與 main 分支差異，透過多執行緒子代理並行分析，產出結構化 Code Review 報告
+description: 自動比對當前分支與 master 分支差異，透過多執行緒收集 diff，AI 代理分析後產出結構化 Code Review 報告
 ---
 
 # Code Review Skill 使用指引
-
-## 概述
-
-此 Skill 提供 Python 腳本，用於：
-1. 取得當前分支與 `main` 的差異檔案
-2. 多執行緒（最多 10 個）並行執行子代理分析
-3. 收集結果並輸出 Markdown 報告至 `./code_review_report.md`
 
 ## 檔案結構
 
@@ -18,52 +11,57 @@ description: 自動比對當前分支與 main 分支差異，透過多執行緒�
 code-review-skill/
 ├── SKILL.md
 └── scripts/
-    ├── code_review.py       # 主程式（入口）
-    ├── agent_worker.py      # 子代理工作模組
-    └── report_generator.py  # 報告生成模組
+    ├── code_review.py       # 主程式（Phase 1 收集 / Phase 2 報告）
+    ├── agent_worker.py      # 子代理模組（diff 取得 + 儲存至 cr/analysis）
+    └── report_generator.py  # 報告生成模組（彙整 + Markdown 輸出）
 ```
 
-## 使用方式
+## 輸出路徑
 
-### 前置條件
-- Python 3.12+
-- 當前目錄或 `--repo` 參數指定的目錄為有效 git 專案
-- 存在 `main` 分支
+| 類型 | 路徑 |
+|------|------|
+| 個別檔案 diff（供 AI 分析） | `cr/analysis/diff/<sanitized>_diff.md` |
+| 個別檔案分析結果（AI 寫入） | `cr/analysis/diff/<sanitized>_result.json` |
+| 彙整報告 | `cr/report/code_review_report.md` |
 
-### 執行指令
+## 執行流程
+
+### Phase 1：收集 diff（Python 多執行緒）
 
 ```bash
-# 在 git 專案根目錄執行
-python /path/to/code-review-skill/scripts/code_review.py
-
-# 指定 git 專案路徑
-python /path/to/code-review-skill/scripts/code_review.py --repo /path/to/your/project
-
-# 指定最大執行緒數（預設 10）
-python /path/to/code-review-skill/scripts/code_review.py --workers 5
+python /path/to/code-review-skill/scripts/code_review.py --repo /path/to/project
 ```
 
-### 輸出
+- 使用最多 10 個執行緒（Work Queue 模式）並行執行 git diff
+- 每個執行緒處理一個差異檔案，完成後立即接取下一個
+- 結果儲存至 `cr/analysis/*_diff.md`
 
-- 分析報告：`./code_review_report.md`（在執行腳本的當前目錄）
-- Console：即時顯示分析進度
+### Phase 2：AI 代理分析（本步驟）
 
-## AI 代理分析流程
+Phase 1 完成後，AI 代理（你）需要：
 
-當腳本執行子代理分析時，AI 代理應依照以下步驟：
+1. 讀取每個 `cr/analysis/*_diff.md` 的內容
+2. 針對 diff 進行分析
+3. 將結果寫入對應的 `cr/analysis/*_result.json`
 
-1. **讀取 diff 內容**：腳本已提供 `git diff main...HEAD -- <file>` 的輸出
-2. **分析差異**：針對 diff 的新增（`+`）與刪除（`-`）行進行分析
-3. **輸出 JSON**：嚴格按照以下格式輸出，不得有額外文字
+> **可並行處理**（使用多個工具呼叫同時分析多個檔案以節省時間）
 
-### 分析輸出格式（精簡 JSON）
+### Phase 3：產出彙整報告
+
+```bash
+python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/to/project
+```
+
+## 分析結果 JSON 格式
+
+每個 `*_result.json` 的內容（精簡欄位以節省 Token）：
 
 ```json
 {
-  "f": "相對路徑/檔案名稱",
+  "f": "src/相對路徑/檔案.py",
   "i": [
     {
-      "cat": "bl",
+      "cat": "sec",
       "sev": "high",
       "ln": 42,
       "desc": "問題描述（精簡）",
@@ -73,28 +71,29 @@ python /path/to/code-review-skill/scripts/code_review.py --workers 5
 }
 ```
 
-### 欄位說明
-
 | 欄位 | 說明 | 允許值 |
 |------|------|--------|
 | `cat` | 問題分類 | `bl`（業務邏輯）/ `sec`（安全性）/ `perf`（效能） |
 | `sev` | 嚴重程度 | `critical` / `high` / `medium` / `low` / `info` |
-| `ln` | 行號（可選） | 整數或 `null` |
-| `desc` | 問題描述 | 字串，盡量精簡 |
-| `sugg` | 修改建議 | 字串，盡量精簡 |
+| `ln`  | 行號（可選） | 整數或 `null` |
+| `desc` | 問題描述 | 精簡字串 |
+| `sugg` | 修改建議 | 精簡字串 |
 
-### 節省 Token 注意事項
+> 無問題時：`{"f": "檔名", "i": []}`
+> JSON 前後不輸出任何說明文字
 
-- `desc` 與 `sugg` 請使用**精簡語言**，避免冗長說明
-- 若無問題，回傳 `{"f": "檔名", "i": []}` 即可
-- 不要在 JSON 前後輸出任何解釋性文字
+## 節省 Token 注意事項
 
-## 報告等級說明
+- diff 已自動過濾純空白行、超過 500 行截斷
+- `desc` / `sugg` 請使用精簡語言
+- 可批次讀取多個 `_diff.md` 後再寫入結果（減少來回次數）
 
-| 等級 | 說明 |
-|------|------|
-| `critical` | 嚴重缺陷，需立即修復（如安全漏洞、資料遺失風險） |
-| `high` | 高風險問題，應在合併前修復 |
+## 等級說明
+
+| 等級 | 適用情境 |
+|------|---------|
+| `critical` | 嚴重漏洞、資料遺失風險 |
+| `high` | 高風險，應在合併前修復 |
 | `medium` | 中等風險，建議修復 |
 | `low` | 低風險，可考慮改善 |
-| `info` | 僅供參考的建議或最佳實踐提示 |
+| `info` | 最佳實踐建議 |
