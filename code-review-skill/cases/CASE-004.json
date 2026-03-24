@@ -1,0 +1,15 @@
+{
+  "id": "CASE-004",
+  "title": "檔案路徑處理可能導致路徑錯誤",
+  "description": "路徑中的 \\ 替換為 /，然後又串接 \\\\，路徑分隔符號不一致導致路徑錯誤",
+  "keywords": [
+    "檔案路徑",
+    "路徑驗證",
+    "checkFilePath",
+    "路徑檢查",
+    "文件路徑",
+    ".replace(\"\\\\\",\"/\"))"
+  ],
+  "category": "bl",
+  "escalate_to": "high"
+}

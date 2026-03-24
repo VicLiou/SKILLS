@@ -2,7 +2,18 @@
   "id": "CASE-003",
   "title": "迴圈內重複執行資料庫查詢（N+1 問題）",
   "description": "在迴圈內對每筆資料單獨執行資料庫查詢，導致 N+1 查詢問題，嚴重影響效能",
-  "keywords": ["loop", "for", "while", "query", "database", "fetch", "select", "n+1", "orm", "repository"],
+  "keywords": [
+    "loop",
+    "for",
+    "while",
+    "query",
+    "database",
+    "fetch",
+    "select",
+    "n+1",
+    "orm",
+    "repository"
+  ],
   "category": "perf",
   "escalate_to": "high"
 }

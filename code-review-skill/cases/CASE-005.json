@@ -1,0 +1,18 @@
+{
+  "id": "CASE-005",
+  "title": "異常未拋出導致靜默失敗 (Silent Failure)",
+  "description": "捕捉到異常（如 IOException）後僅記錄 Log，未將異常向上拋出或妥善處理，導致外層程式誤判執行成功而發生靜默失敗。",
+  "keywords": [
+    "catch",
+    "Exception",
+    "IOException",
+    "log.error",
+    "未拋出",
+    "靜默失敗",
+    "silent failure",
+    "向上拋出",
+    "throw"
+  ],
+  "category": "bl",
+  "escalate_to": "high"
+}

@@ -23,9 +23,9 @@ SEVERITY_LABEL = {
 }
 
 CATEGORY_MAP = {
-    "bl":   "業務邏輯問題",
-    "sec":  "安全性問題",
-    "perf": "效能問題",
+    "bl":   "💼 業務邏輯問題",
+    "sec":  "🛡️ 安全性問題",
+    "perf": "⚡效能問題",
 }
 CATEGORY_ORDER = ["bl", "sec", "perf"]
 
