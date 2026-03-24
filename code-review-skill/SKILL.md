@@ -5,15 +5,27 @@ description: 自動偵測基礎分支，多執行緒收集 diff，AI 代理分�
 
 # Code Review Skill 使用指引
 
+## 快速開始
+
+| 步驟 | 指令 / 操作 | 說明 |
+|------|-------------|------|
+| **1. 收集 diff** | `python scripts/code_review.py --repo /path/to/project` | 自動偵測分支、多執行緒產生 diff 檔案 |
+| **2. AI 分析** | 由 AI Agent（你）讀取 diff → 寫入 JSON 結果 | 詳見下方 Phase 2 說明 |
+| **3. 產出報告** | `python scripts/code_review.py --report --repo /path/to/project` | 彙整 JSON、提升案例等級、輸出 Markdown |
+
+---
+
 ## 檔案結構
 
 ```
 code-review-skill/
 ├── SKILL.md
+├── cases/                     # 歷史問題案例庫（*.json）
 └── scripts/
-    ├── code_review.py       # 主程式（Phase 1 收集 / Phase 2 報告）
-    ├── agent_worker.py      # 子代理模組（diff 取得 + 儲存至 cr/diff/）
-    └── report_generator.py  # 報告生成模組（彙整 + Markdown 輸出）
+    ├── code_review.py         # 主程式：Phase 1 收集 diff / Phase 3 產出報告
+    ├── agent_worker.py        # diff 取得與儲存（供 Phase 1 多執行緒呼叫）
+    ├── case_matcher.py        # 案例注入（Phase 1）與案例等級提升（Phase 3）
+    └── report_generator.py   # 報告生成：彙整 JSON → Markdown
 ```
 
 ## 輸出路徑
@@ -23,6 +35,8 @@ code-review-skill/
 | 個別檔案 diff（供 AI 分析） | `cr/diff/<filename>_diff.diff`       |
 | 個別檔案分析結果（AI 寫入） | `cr/analysis/<filename>_result.json` |
 | 彙整報告                    | `cr/report/code_review_report.md`    |
+
+---
 
 ## 執行流程
 
@@ -36,8 +50,11 @@ python /path/to/code-review-skill/scripts/code_review.py --repo /path/to/project
 - 使用最多 10 個執行緒（Work Queue 模式）並行執行 git diff
 - 每個執行緒處理一個差異檔案，完成後立即接取下一個
 - 結果儲存至 `cr/diff/<filename>_diff.diff`（僅用檔名，不含路徑）
+- 若歷史案例庫存在，自動在 diff 頂部注入相關案例提示（`AUTO-INJECTED CONTEXT`）
 
-### Phase 2：AI 代理分析（本步驟）
+### Phase 2：AI 代理分析（本步驟由你執行，非腳本自動化）
+
+> ⚠️ **這個步驟是 AI Agent（你）的手動操作，不需要執行任何 Python 腳本。**
 
 Phase 1 完成後，AI 代理（你）需要：
 
@@ -58,6 +75,8 @@ python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/t
 - 若分析結果中含有 `matched_case_ids`，腳本會透過內部邏輯映射回完整案例內容，並**自動提升該問題的嚴重等級**！
 - 最終彙整產出 `cr/report/code_review_report.md`。
 - 報告產出後自動刪除 `cr/diff/` 下所有暫存 `.diff` 檔案。
+
+---
 
 ## 分析結果 JSON 格式
 
@@ -82,6 +101,8 @@ python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/t
 
 | 欄位   | 說明         | 允許值                                            |
 | ------ | ------------ | ------------------------------------------------- |
+| `f`    | 檔案路徑     | 相對路徑字串                                      |
+| `i`    | 問題清單     | 陣列，無問題時為 `[]`                             |
 | `cat`  | 問題分類     | `bl`（業務邏輯）/ `sec`（安全性）/ `perf`（效能） |
 | `sev`  | 嚴重程度     | `critical` / `high` / `medium` / `low` / `info`   |
 | `ln`   | 行號（可選） | 整數或 `null`                                     |
@@ -92,6 +113,8 @@ python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/t
 
 > 無問題時：`{"f": "檔名", "i": []}`
 > JSON 前後不輸出任何說明文字
+
+---
 
 ## 節省 Token 注意事項
 

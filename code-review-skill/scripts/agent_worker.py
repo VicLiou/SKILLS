@@ -18,7 +18,7 @@ MAX_DIFF_LINES = 500  # 節省 Token：超過此行數則截斷
 # ─── 工具函式 ────────────────────────────────────────────────────────────────
 
 def _run_git(args: list[str], cwd: str) -> str:
-    """執行 git 指令並回傳 stdout 字串。若失敗則回傳空字串。"""
+    """執行 git 指令並回傳 stdout 字串。若指令失敗印出警告後回傳空字串。"""
     try:
         result = subprocess.run(
             ["git"] + args,
@@ -28,10 +28,12 @@ def _run_git(args: list[str], cwd: str) -> str:
             encoding="utf-8",
             errors="replace",
         )
+        if result.returncode != 0:
+            print(f"[WARN] git 指令失敗：{' '.join(args)}\n{result.stderr.strip()}", file=sys.stderr)
         return result.stdout
     except FileNotFoundError:
         print("[ERROR] 找不到 git 執行檔，請確認 git 已安裝並加入 PATH", file=sys.stderr)
-        return ""
+        sys.exit(1)
 
 
 def detect_base_branch(repo_path: str) -> str:

@@ -1,11 +1,14 @@
 """
 case_matcher.py
-已知問題案例對比模組：將掃描 issue 與歷史案例庫比對，命中則提升等級至 high
+已知問題案例對比模組，提供以下兩個功能：
 
-兩層預篩策略（節省 Token）：
-  層一：分類隔離 — issue.cat == case.category（Python 比對，免費）
-  層二：關鍵字預篩 — case.keywords 至少一個出現在 issue.desc/sugg（Python 比對，免費）
-  → 僅將「預篩命中」的候選案例送給 AI 做語意比對
+  inject_relevant_cases_to_diff（Phase 1 注入）：
+    讀取 .diff 檔案內容，若發現 diff 內容含有歷史案例關鍵字，
+    自動在 diff 最頂部注入 AUTO-INJECTED CONTEXT 提示，供 AI 分析時參考。
+
+  match_and_escalate（Phase 3 查表）：
+    讀取 AI 已寫入 matched_case_ids 的分析結果，
+    從案例庫查表取得完整案例資訊，並自動提升命中 issue 的嚴重等級。
 """
 
 from __future__ import annotations
