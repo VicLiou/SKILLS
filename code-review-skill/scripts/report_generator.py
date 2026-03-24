@@ -232,7 +232,13 @@ def generate_report(
 
     for filename, stats in file_issue_stats.items():
         counts = [str(stats[s]) for s in SEVERITY_ORDER]
-        row_str = f"| `{filename}` | " + " | ".join(counts) + f" | {stats['total']} 個 |"
+        tot = stats['total']
+        if tot > 0:
+            # 許多 Markdown 預覽器會過濾 HTML style 屬性，改用醒目的 Emoji + 粗體
+            file_disp = f'🚨 **`{filename}`**'
+        else:
+            file_disp = f'`{filename}`'
+        row_str = f"| {file_disp} | " + " | ".join(counts) + f" | {tot} 個 |"
         lines.append(row_str)
         
     lines += ["", f"**總計：掃描 {len(results)} 個檔案，發現 {total} 個問題。**", "", "---", ""]
