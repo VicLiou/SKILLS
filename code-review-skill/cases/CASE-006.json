@@ -1,0 +1,19 @@
+{
+  "id": "CASE-006",
+  "title": "敏感資訊硬編碼 (Hardcoded Secret)",
+  "description": "密碼、金鑰（如 AES Key）或敏感憑證以明文形式硬編碼在原始碼中，極易透過反編譯或源碼流出導致嚴重安全外洩漏洞。",
+  "keywords": [
+    "硬編碼",
+    "明文",
+    "金鑰",
+    "secret",
+    "key",
+    "AES",
+    "hardcoded",
+    "password",
+    "憑證",
+    "配置檔"
+  ],
+  "category": "sec",
+  "escalate_to": "critical"
+}

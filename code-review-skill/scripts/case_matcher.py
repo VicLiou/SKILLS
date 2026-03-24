@@ -59,10 +59,11 @@ def _prefilter_candidates(
     兩層預篩：分類隔離 → 關鍵字比對，回傳候選案例列表。
     全程 Python str 比對，不消耗 Token。
     """
-    issue_cat = issue.get("category", "")
-    issue_text = (
-        (issue.get("description", "") + " " + issue.get("suggestion", "")).lower()
-    )
+    # 支援完整欄位與精簡欄位 (cat/desc/sugg)
+    issue_cat = issue.get("category", issue.get("cat", ""))
+    issue_desc = issue.get("description", issue.get("desc", ""))
+    issue_sugg = issue.get("suggestion", issue.get("sugg", ""))
+    issue_text = (issue_desc + " " + issue_sugg).lower()
 
     candidates = []
     for case in cases:
@@ -92,9 +93,11 @@ def build_match_prompt(
         f"{c['id']}|{c['title']}|{','.join(c['keywords'][:5])}"
         for c in candidates
     )
+    issue_desc = issue.get("description", issue.get("desc", ""))
+    issue_sugg = issue.get("suggestion", issue.get("sugg", ""))
     return (
         f"判斷以下 issue 是否與歷史案例相似，回傳命中的 ID 陣列（如 [\"CASE-001\"]，無命中回傳 []）：\n"
-        f"Issue：{issue.get('description', '')} / {issue.get('suggestion', '')}\n"
+        f"Issue：{issue_desc} / {issue_sugg}\n"
         f"案例（ID|標題|關鍵字）：\n{case_lines}"
     )
 
