@@ -186,6 +186,8 @@ def match_and_escalate(
 
     if total_matched:
         print(f"[INFO] 命中歷史案例：{total_matched} 個 issue 等級已提升")
+    else:
+        print("[INFO] 未命中任何歷史案例")
 
     return results
 
