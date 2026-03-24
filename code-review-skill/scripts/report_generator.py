@@ -91,8 +91,11 @@ def _render_issue_row(issue: dict[str, Any]) -> str:
     file_ref = f"`{issue['file']}`{line_info}"
     rows = [
         f"- **{file_ref}**",
-        f"  - 問題：{issue['description']}",
     ]
+    for mc in issue.get("matched_cases", []):
+        rows.append(f"  - ⚠️ 命中歷史案例：**[{mc['id']}]** {mc['title']}")
+    rows.append(f"  - 問題：{issue['description']}")
+    
     if issue.get("suggestion"):
         rows.append(f"  - 建議：{issue['suggestion']}")
     if issue.get("code"):
@@ -103,8 +106,6 @@ def _render_issue_row(issue: dict[str, Any]) -> str:
         for code_line in code_block.splitlines():
             rows.append(f"    {code_line}")
         rows.append("    ```")
-    for mc in issue.get("matched_cases", []):
-        rows.append(f"  - ⚠️ 命中歷史案例：**[{mc['id']}]** {mc['title']}")
     return "\n".join(rows)
 
 
@@ -169,6 +170,22 @@ def generate_report(
 
     lines += ["", "---", ""]
 
+    # ── 命中歷史案例摘要 ──
+    matched_issues = [i for i in issues if i.get("matched_cases")]
+    if matched_issues:
+        lines += ["## ⚠️ 命中歷史案例摘要", ""]
+        lines += ["| 檔案 | 命中案例 | 問題描述小計 |"]
+        lines += ["|------|----------|--------------|"]
+        for i in matched_issues:
+            cases_str = "<br>".join(f"**[{mc['id']}]** {mc['title']}" for mc in i["matched_cases"])
+            file_info = f"`{i['file']}` (L{i['line']})" if i.get("line") else f"`{i['file']}`"
+            # 處理可能的多行問題描述，避免破壞表格
+            desc_short = i['description'].replace('\n', ' ')
+            if len(desc_short) > 50:
+                desc_short = desc_short[:47] + "..."
+            lines.append(f"| {file_info} | {cases_str} | {desc_short} |")
+        lines += ["", "---", ""]
+
     # ── 各分類詳細內容 ──
     for cat in CATEGORY_ORDER:
         cat_issues = [i for i in issues if i["category"] == cat]
@@ -188,6 +205,37 @@ def generate_report(
                 lines.append("")
 
         lines += ["---", ""]
+
+    # ── 掃描檔案統計摘要 ──
+    lines += ["## 📂 掃描檔案統計摘要", ""]
+    
+    # 表頭加入嚴重程度
+    header_cols = ["掃描檔案"] + [SEVERITY_LABEL[s] for s in SEVERITY_ORDER] + ["總問題數"]
+    lines += ["| " + " | ".join(header_cols) + " |"]
+    lines += ["|----------|" + "------|" * len(SEVERITY_ORDER) + "----------|"]
+    
+    # 初始化統計字典
+    file_issue_stats = {}
+    for result in results:
+        # 確保將所有有掃描的檔案都記錄下來 (即使問題數為 0)
+        filename = result.get("f", result.get("file", "unknown"))
+        file_issue_stats[filename] = {s: 0 for s in SEVERITY_ORDER}
+        file_issue_stats[filename]["total"] = 0
+
+    # 累加各檔案各嚴重程度的問題數
+    for issue in issues:
+        filename = issue["file"]
+        sev = issue["severity"]
+        if sev in file_issue_stats.get(filename, {}):
+            file_issue_stats[filename][sev] += 1
+            file_issue_stats[filename]["total"] += 1
+
+    for filename, stats in file_issue_stats.items():
+        counts = [str(stats[s]) for s in SEVERITY_ORDER]
+        row_str = f"| `{filename}` | " + " | ".join(counts) + f" | {stats['total']} 個 |"
+        lines.append(row_str)
+        
+    lines += ["", f"**總計：掃描 {len(results)} 個檔案，發現 {total} 個問題。**", "", "---", ""]
 
     lines.append("> *此報告由 Code Review Skill 自動產出*")
     lines.append("")

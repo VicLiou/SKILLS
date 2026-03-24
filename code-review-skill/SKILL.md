@@ -41,22 +41,22 @@ python /path/to/code-review-skill/scripts/code_review.py --repo /path/to/project
 
 Phase 1 完成後，AI 代理（你）需要：
 
-1. 讀取每個 `cr/diff/*_diff.diff` 的內容
-
-2. 針對 diff 進行分析
-3. 將結果寫入對應的 `cr/analysis/*_result.json`
+1. 檢查並閱讀 `cr/analysis/cases_reference.json`（如果有的話），以了解專案的歷史錯誤案例。
+2. 讀取每個 `cr/diff/*_diff.diff` 的內容，針對 diff 進行缺陷掃描。
+3. 若發現問題與歷史案例相符，請將命中案例的 ID 放進 `matched_case_ids` 陣列中。
+4. 將結果寫入對應的 `cr/analysis/*_result.json`。
 
 > **可並行處理**（使用多個工具呼叫同時分析多個檔案以節省時間）
 
-### Phase 3：產出彙整報告與案例對比（清除 diff 暫存）
+### Phase 3：產出彙整報告與案例等級自動提升（清除 diff 暫存）
 
 ```bash
 python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/to/project
 ```
 
-- 執行時，腳本會自動以關鍵字預篩歷史案例（`cases/*.json`）。
-- **【重要互動】** 若有發現疑似命中的案例，腳本會在終端機暫停並顯示 `[MATCH] 請輸入命中案例 ID 陣列...`。此時身為 AI 代理的你，必須閱讀終端機印出的對比提示，並直接回傳 JSON 陣列（例：`["CASE-001"]`，無命中時回傳 `[]`）。
-- 完成對比後，讀取 `cr/analysis/*_result.json` 產出 `cr/report/code_review_report.md`（若命中案例，嚴重等級會自動提升至 High）。
+- 執行時，腳本會自動讀取所有 `cr/analysis/*_result.json`。
+- 若分析結果中含有 `matched_case_ids`，腳本會透過內部邏輯映射回完整案例內容，並**自動提升該問題的嚴重等級**！
+- 最終彙整產出 `cr/report/code_review_report.md`。
 - 報告產出後自動刪除 `cr/diff/` 下所有暫存 `.diff` 檔案。
 
 ## 分析結果 JSON 格式
@@ -73,7 +73,8 @@ python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/t
       "ln": 42,
       "desc": "問題描述（精簡）",
       "sugg": "修改建議（必填）",
-      "code": "建議程式碼片段（必填）"
+      "code": "建議程式碼片段（必填）",
+      "matched_case_ids": ["CASE-001"]
     }
   ]
 }
@@ -87,6 +88,7 @@ python /path/to/code-review-skill/scripts/code_review.py --report --repo /path/t
 | `desc` | 問題描述     | 精簡字串                                          |
 | `sugg` | 修改建議     | **必填**，提供具體可操作的修復方式，不得留空      |
 | `code` | 建議程式碼   | **必填**，提供修復後的程式碼片段，以利報告渲染    |
+| `matched_case_ids` | 命中案例 | **選填**，字串陣列（如 `["CASE-001"]`），如果有的話 |
 
 > 無問題時：`{"f": "檔名", "i": []}`
 > JSON 前後不輸出任何說明文字

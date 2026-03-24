@@ -49,57 +49,40 @@ def load_cases(cases_dir: str) -> list[dict[str, Any]]:
     return cases
 
 
-# ─── 兩層預篩 ────────────────────────────────────────────────────────────────
+# ─── 案例參考生成（Phase 1） ──────────────────────────────────────────────────
 
-def _prefilter_candidates(
-    issue: dict[str, Any],
-    cases: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+def generate_cases_reference(cases_dir: str, output_path: str) -> bool:
     """
-    兩層預篩：分類隔離 → 關鍵字比對，回傳候選案例列表。
-    全程 Python str 比對，不消耗 Token。
+    讀取 cases_dir 下的所有案例，產出精簡版的參考清單，供 AI 代理在 Phase 2 使用。
+    
+    Args:
+        cases_dir: 案例庫目錄
+        output_path: 產出的參考檔案路徑 (例如 cr/cases_reference.json)
+    
+    Returns:
+        若成功生成且包含至少一個案例回傳 True，否則回傳 False
     """
-    # 支援完整欄位與精簡欄位 (cat/desc/sugg)
-    issue_cat = issue.get("category", issue.get("cat", ""))
-    issue_desc = issue.get("description", issue.get("desc", ""))
-    issue_sugg = issue.get("suggestion", issue.get("sugg", ""))
-    issue_text = (issue_desc + " " + issue_sugg).lower()
-
-    candidates = []
-    for case in cases:
-        # 層一：分類隔離
-        if case.get("category", "") != issue_cat:
-            continue
-        # 層二：關鍵字預篩（至少一個 keyword 出現在 issue 文字中）
-        keywords = [kw.lower() for kw in case.get("keywords", [])]
-        if any(kw in issue_text for kw in keywords):
-            candidates.append(case)
-
-    return candidates
-
-
-# ─── 比對提示生成 ────────────────────────────────────────────────────────────
-
-def build_match_prompt(
-    issue: dict[str, Any],
-    candidates: list[dict[str, Any]],
-) -> str:
-    """
-    生成給 AI 代理的精簡比對提示（節省 Token）。
-    代理只需回傳命中的案例 ID 清單（JSON 陣列）。
-    """
-    # 壓縮案例格式：ID|title|keywords
-    case_lines = "\n".join(
-        f"{c['id']}|{c['title']}|{','.join(c['keywords'][:5])}"
-        for c in candidates
-    )
-    issue_desc = issue.get("description", issue.get("desc", ""))
-    issue_sugg = issue.get("suggestion", issue.get("sugg", ""))
-    return (
-        f"判斷以下 issue 是否與歷史案例相似，回傳命中的 ID 陣列（如 [\"CASE-001\"]，無命中回傳 []）：\n"
-        f"Issue：{issue_desc} / {issue_sugg}\n"
-        f"案例（ID|標題|關鍵字）：\n{case_lines}"
-    )
+    cases = load_cases(cases_dir)
+    if not cases:
+        return False
+        
+    # 只提取 AI 分析時需要的必要資訊
+    refs = []
+    for c in cases:
+        refs.append({
+            "id": c.get("id"),
+            "category": c.get("category"),
+            "title": c.get("title"),
+            "keywords": c.get("keywords", []),
+            "description": c.get("description", ""),
+            "escalate_to": c.get("escalate_to", "high")
+        })
+        
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps(refs, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[INFO] 歷史案例參考已產出至：{output_path}")
+    return True
 
 
 # ─── 等級提升 ────────────────────────────────────────────────────────────────
@@ -114,60 +97,49 @@ def _escalate_severity(
     return current
 
 
-# ─── 主對比流程 ──────────────────────────────────────────────────────────────
+# ─── 主對比流程（Phase 3） ───────────────────────────────────────────────────
 
 def match_and_escalate(
     results: list[dict[str, Any]],
     cases_dir: str,
-    ai_match_fn: Any,
 ) -> list[dict[str, Any]]:
     """
-    對所有掃描結果執行案例對比，命中的 issue 提升等級並標記案例資訊。
+    讀取 Phase 2 結果中的 matched_case_ids，將命中案例詳細資訊附加至結果並提升嚴重等級。
 
     Args:
         results:     所有子代理回傳的結構化結果清單
         cases_dir:   案例庫目錄（預設：cases/）
-        ai_match_fn: 接收 prompt 字串，回傳 JSON 陣列字串的函式
-                     （由 AI 代理提供，輸入 prompt，輸出 ["CASE-001", ...]）
 
     Returns:
-        更新後的 results（已提升等級）
+        更新後的 results（已提升等級並附加 matched_cases）
     """
     cases = load_cases(cases_dir)
     if not cases:
         print("[INFO] 無歷史案例庫，跳過案例對比")
         return results  # 無案例庫，直接回傳原始結果
 
+    cases_map = {c["id"]: c for c in cases if "id" in c}
     total_matched = 0
 
     for file_result in results:
         issues = file_result.get("i", file_result.get("issues", []))
         for issue in issues:
-            candidates = _prefilter_candidates(issue, cases)
-            if not candidates:
-                continue  # 兩層預篩無候選，跳過（不消耗 Token）
-
-            # 送候選案例給 AI 比對
-            prompt = build_match_prompt(issue, candidates)
-            try:
-                raw = ai_match_fn(prompt).strip()
-                # 解析回傳的 ID 陣列
-                if raw.startswith("["):
-                    matched_ids: list[str] = json.loads(raw)
-                else:
-                    matched_ids = []
-            except Exception:
-                matched_ids = []
-
-            if not matched_ids:
+            # Phase 2 AI 會在 issue 中放入 matched_case_ids: ["CASE-xxx"]
+            matched_ids = issue.get("matched_case_ids", [])
+            if not matched_ids or not isinstance(matched_ids, list):
                 continue
 
             # 找出命中案例的詳細資訊
-            matched_cases = [
-                {"id": c["id"], "title": c["title"], "escalate_to": c["escalate_to"]}
-                for c in candidates
-                if c["id"] in matched_ids
-            ]
+            matched_cases = []
+            for cid in matched_ids:
+                if cid in cases_map:
+                    c = cases_map[cid]
+                    matched_cases.append({
+                        "id": c["id"], 
+                        "title": c["title"], 
+                        "escalate_to": c["escalate_to"]
+                    })
+            
             if not matched_cases:
                 continue
 
@@ -189,9 +161,7 @@ def match_and_escalate(
             total_matched += 1
 
     if total_matched:
-        print(f"[INFO] 命中歷史案例：{total_matched} 個 issue 等級已提升")
-    else:
-        print("[INFO] 未命中任何歷史案例")
+        print(f"[INFO] 命中歷史案例：{total_matched} 個 issue 等級已自動依據案例提升")
 
     return results
 

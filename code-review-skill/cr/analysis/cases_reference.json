@@ -1,0 +1,111 @@
+[
+  {
+    "id": "CASE-001",
+    "category": "sec",
+    "title": "SQL 注入（字串拼接）",
+    "keywords": [
+      "sql",
+      "query",
+      "concat",
+      "string format",
+      "user input",
+      "execute",
+      "select",
+      "insert",
+      "update",
+      "delete"
+    ],
+    "description": "直接將用戶輸入拼接進 SQL 語句，未使用參數化查詢，導致 SQL Injection 風險",
+    "escalate_to": "high"
+  },
+  {
+    "id": "CASE-002",
+    "category": "sec",
+    "title": "敏感資訊洩漏（日誌或例外訊息）",
+    "keywords": [
+      "password",
+      "token",
+      "secret",
+      "api key",
+      "log",
+      "print",
+      "exception",
+      "stacktrace",
+      "sensitive",
+      "credential"
+    ],
+    "description": "將密碼、Token、API Key、個人資料等敏感資訊直接輸出至日誌或錯誤訊息，可能導致資訊洩漏",
+    "escalate_to": "high"
+  },
+  {
+    "id": "CASE-003",
+    "category": "perf",
+    "title": "迴圈內重複執行資料庫查詢（N+1 問題）",
+    "keywords": [
+      "loop",
+      "for",
+      "while",
+      "query",
+      "database",
+      "fetch",
+      "select",
+      "n+1",
+      "orm",
+      "repository"
+    ],
+    "description": "在迴圈內對每筆資料單獨執行資料庫查詢，導致 N+1 查詢問題，嚴重影響效能",
+    "escalate_to": "high"
+  },
+  {
+    "id": "CASE-004",
+    "category": "bl",
+    "title": "檔案路徑處理可能導致路徑錯誤",
+    "keywords": [
+      "檔案路徑",
+      "路徑驗證",
+      "checkFilePath",
+      "路徑檢查",
+      "文件路徑",
+      ".replace(\"\\\\\",\"/\"))"
+    ],
+    "description": "路徑中的 \\ 替換為 /，然後又串接 \\\\，路徑分隔符號不一致導致路徑錯誤",
+    "escalate_to": "high"
+  },
+  {
+    "id": "CASE-005",
+    "category": "bl",
+    "title": "異常未拋出導致靜默失敗 (Silent Failure)",
+    "keywords": [
+      "catch",
+      "Exception",
+      "IOException",
+      "log.error",
+      "未拋出",
+      "靜默失敗",
+      "silent failure",
+      "向上拋出",
+      "throw"
+    ],
+    "description": "捕捉到異常（如 IOException）後僅記錄 Log，未將異常向上拋出或妥善處理，導致外層程式誤判執行成功而發生靜默失敗。",
+    "escalate_to": "high"
+  },
+  {
+    "id": "CASE-006",
+    "category": "sec",
+    "title": "敏感資訊硬編碼 (Hardcoded Secret)",
+    "keywords": [
+      "硬編碼",
+      "明文",
+      "金鑰",
+      "secret",
+      "key",
+      "AES",
+      "hardcoded",
+      "password",
+      "憑證",
+      "配置檔"
+    ],
+    "description": "密碼、金鑰（如 AES Key）或敏感憑證以明文形式硬編碼在原始碼中，極易透過反編譯或源碼流出導致嚴重安全外洩漏洞。",
+    "escalate_to": "critical"
+  }
+]

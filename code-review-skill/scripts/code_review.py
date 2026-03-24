@@ -24,7 +24,7 @@ _SCRIPTS_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from agent_worker import detect_base_branch, save_diff_for_analysis
-from case_matcher import match_and_escalate
+from case_matcher import match_and_escalate, generate_cases_reference
 from report_generator import generate_report
 
 
@@ -186,19 +186,6 @@ def collect_phase(
 
 # ─── Phase 2：彙整報告 + 清理 ────────────────────────────────────────────────
 
-def _default_ai_match_fn(prompt: str) -> str:
-    """
-    預設 AI 對比函式：將 prompt 印出，從 stdin 讀取代理的判斷結果。
-    輸入格式：["CASE-001"] 或 []
-    """
-    print("\n" + "-" * 40)
-    print(prompt)
-    print("-" * 40)
-    if not sys.stdin.isatty():
-        return sys.stdin.readline().strip()
-    return input("[MATCH] 請輸入命中案例 ID 陣列（如 [\"CASE-001\"] 或 []）：").strip()
-
-
 def cleanup_diff_dir(diff_dir: str) -> None:
     """刪除 diff_dir 下所有 .diff 檔案（清理掃描完畢後的暫存 diff）。"""
     diff_path = Path(diff_dir)
@@ -250,13 +237,12 @@ def report_phase(
         except Exception as e:
             print(f"[WARN] 讀取 {json_file.name} 失敗：{e}", file=sys.stderr)
 
-    # 案例對比（兩層預篩 + AI 語意比對）
+    # 案例對比（直接從 Phase 2 解析的 matched_case_ids 查表）
     if cases_dir:
-        print("[INFO] 執行歷史案例對比...")
+        print("[INFO] 載入歷史案例並處理命中資訊...")
         results = match_and_escalate(
             results=results,
             cases_dir=cases_dir,
-            ai_match_fn=_default_ai_match_fn,
         )
 
     Path(report_dir).mkdir(parents=True, exist_ok=True)
@@ -365,16 +351,27 @@ def main() -> None:
         code_files, repo_path, args.diff_dir, args.result_dir, base_branch, args.workers
     )
 
+    # 產生案例參考檔供 Phase 2 使用
+    cases_ref_path = Path(args.result_dir) / "cases_reference.json"
+    if args.cases_dir:
+        generate_cases_reference(args.cases_dir, str(cases_ref_path))
+
     # 輸出後續操作說明給 AI 代理
     sep = "=" * 60
     print(f"\n{sep}")
     print(f"[✅ Phase 1 完成] {len(saved_diffs)} 個 diff 已儲存至 {args.diff_dir}/")
-    print("\n[NEXT STEP] 請分析以下檔案並將 JSON 結果寫入對應的 _result.json：\n")
+    print("\n[NEXT STEP] (AI Agent) 接下來請依照指示進行分析：")
+    if args.cases_dir and cases_ref_path.exists():
+        print(f"  1. 首先閱讀 {cases_ref_path} 了解歷史案例庫。")
+        print("  2. 分析每個 diff，若發現有缺陷與案例相符，請在其 JSON 輸出內加上 `\"matched_case_ids\": [\"CASE-XXX\"]`。")
+    else:
+        print("  1. 分析每個 diff。")
+    print("\n[需分析的檔案] 將 JSON 結果寫入對應的 _result.json：\n")
     for diff_file in saved_diffs:
         result_name = diff_file.name.replace("_diff.diff", "_result.json")
         result_path = Path(args.result_dir) / result_name
         print(f"  📄 {diff_file}  →  {result_path}")
-    print("\n[NEXT STEP] 全部分析完成後執行：")
+    print("\n[FINISH] 全部分析完成後執行：")
     print(f"  python code_review.py --report --repo {args.repo}")
     print(sep)
 
