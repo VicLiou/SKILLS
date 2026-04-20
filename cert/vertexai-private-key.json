@@ -1,0 +1,3 @@
+{
+  "message": "請提供 Google Vertex AI 的 Service Account Key，我需要用它來存取 Vertex AI 的 API。"
+}

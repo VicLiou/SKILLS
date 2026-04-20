@@ -1,0 +1,25 @@
+[[rule]]
+
+# Gemini Policy 可參考 https://geminicli.com/docs/reference/policy-engine/
+
+# 設定該條規則可取用之工具
+toolName = [
+    "activate_skill", 
+    "run_shell_command", 
+    "list_directory", 
+    "read_file", 
+    "write_file", 
+    "write_todos", 
+    "get_internal_docs"]
+
+# 符合該條規則條件，設定決策動作為 Allow
+decision = "allow" 
+
+# 此規則僅適用於非互動模式生效
+interactive = false
+
+# 設定規則優先級為 100
+priority = 100
+
+# 設定限制模式為 yolo
+modes = ["yolo"]

@@ -1,0 +1,23 @@
+{
+  "id": "CASE-001",
+  "title": "檔案複製大小驗證邏輯缺陷",
+  "description": "在迴圈中複製檔案時，部分檔案因條件判斷被 continue 跳過，但這些被跳過的檔案未計入大小統計，導致最終的大小驗證失效，可能誤判為成功但實際有檔案未處理。結合路徑處理錯誤（先將 \\ 替換為 /，又用 \\ 拼接）會導致更嚴重的檔案路徑錯誤。",
+  "keywords": [
+    "FileUtils.copyDirectory",
+    "FileUtils.copy",
+    "file copy",
+    "file size",
+    "getFileSize",
+    "srcSize",
+    "destSize",
+    "continue",
+    "validation",
+    "檔案複製",
+    "大小驗證",
+    "replace(\"\\\\\"",
+    "路徑拼接",
+    "+ \"\\\\\" +"
+  ],
+  "category": "bl",
+  "escalate_to": "high"
+}
