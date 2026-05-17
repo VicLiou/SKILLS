@@ -201,3 +201,71 @@ python scripts/code_review.py --report --repo /path/to/project
 ## 授權
 
 此專案為內部工具，請依組織規範使用。
+---
+
+# 台灣股市與期貨報價腳本 (Taiwan Stock & Futures API Script)
+
+## 1. 專案簡介
+本專案旨在解決 Yahoo Finance 等常見免費財經 API 在台灣股市、期貨與選擇權報價上不準確及資料缺失的問題。透過此腳本，可精準獲取台灣股期權市場行情與總體經濟資料，為後續的量化分析與自動化交易（如「投資蝦」專案）提供穩定且可靠的數據基礎。
+
+## 2. 環境安裝
+請確保系統已安裝 Python 3.8 或以上版本。接著請在專案根目錄下使用以下指令安裝所需的依賴套件：
+
+```bash
+pip install -r requirements.txt
+```
+
+## 3. 使用方法
+執行主程式 `main.py` 來抓取指定日期的市場資料。為了確保資料的準確性與可回溯性，**請務必使用 `--date` 參數**來指定抓取日期。
+
+指令範例：
+```bash
+python main.py --date 20260506
+```
+*   `--date` 參數格式為 `YYYYMMDD`（例如：20260506 代表 2026 年 5 月 6 日）。
+*   若未提供參數，系統將根據預設邏輯抓取最新一個交易日的資料。
+
+## 4. 輸出格式 (JSON Schema)
+腳本執行完畢後，預設會輸出或回傳結構化的 JSON 資料，讓「投資蝦」可以直接解析使用。以下為輸出的精簡版 JSON Schema 結構說明：
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "description": "資料日期，格式為 YYYY-MM-DD"
+    },
+    "market_summary": {
+      "type": "object",
+      "description": "大盤及期貨總結資訊",
+      "properties": {
+        "twse_index": { "type": "number", "description": "台灣加權指數收盤價" },
+        "tx00": { "type": "number", "description": "台指期近月合約報價" },
+        "total_volume": { "type": "number", "description": "大盤總成交金額" }
+      }
+    },
+    "stocks": {
+      "type": "array",
+      "description": "個股報價列表",
+      "items": {
+        "type": "object",
+        "properties": {
+          "symbol": { "type": "string", "description": "股票代號" },
+          "close": { "type": "number", "description": "收盤價" },
+          "volume": { "type": "number", "description": "成交量" }
+        }
+      }
+    },
+    "macro_data": {
+      "type": "object",
+      "description": "總體經濟數據 (如台幣匯率等)",
+      "properties": {
+        "usd_twd": { "type": "number", "description": "美元兌台幣匯率" }
+      }
+    }
+  },
+  "required": ["date", "market_summary", "stocks"]
+}
+```
